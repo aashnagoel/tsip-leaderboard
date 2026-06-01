@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TSIP Leaderboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="page">
+
+    <header class="site-header">
+      <div class="title-block">
+        <h1 id="site-title"><span class="spark">&#9733;</span> TSIP Leaderboard</h1>
+        <p class="subtitle" id="subtitle">Live from the claim sheet &middot; powered by Meridian</p>
+      </div>
+      <div class="header-actions">
+        <span class="status-pill status-connecting" id="fb-status" title="">Firebase: connecting&hellip;</span>
+        <span class="last-updated" id="last-updated"></span>
+        <button class="btn btn-secondary" id="refresh-btn" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <div class="banner" id="loading-banner" hidden></div>
+
+    <!-- Prize + countdown hero -->
+    <section class="hero" id="hero">
+      <div class="hero-top">
+        <div class="prize-line">
+          <div>
+            <span class="eyebrow">This week&rsquo;s bonus</span>
+            <p class="prize-headline">Top 3 Full Task finishers split <span class="amt" id="prize-total">$950</span></p>
+            <p class="prize-sub" id="prize-breakdown">&#129351; 1st $500 &middot; &#129352; 2nd $300 &middot; &#129353; 3rd $150 &mdash; from Meridian</p>
+          </div>
+        </div>
+        <div class="countdown" id="countdown">
+          <span class="cd-label">Bonus locks in</span>
+          <div class="cd-clock" id="cd-clock">
+            <div class="cd-unit"><div class="cd-num" id="cd-d">--</div><div class="cd-tag">days</div></div>
+            <div class="cd-unit"><div class="cd-num" id="cd-h">--</div><div class="cd-tag">hrs</div></div>
+            <div class="cd-unit"><div class="cd-num" id="cd-m">--</div><div class="cd-tag">min</div></div>
+            <div class="cd-unit"><div class="cd-num" id="cd-s">--</div><div class="cd-tag">sec</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- "You" status / identity prompt -->
+    <section class="you-card" id="you-card" hidden>
+      <div class="you-left">
+        <div class="you-badge" id="you-badge">?</div>
+        <div>
+          <div class="you-name" id="you-name">You</div>
+          <div class="you-meta" id="you-meta"></div>
+          <button type="button" class="you-change" id="you-change">Not you? Change</button>
+        </div>
+      </div>
+      <div class="you-pressure" id="you-pressure"></div>
+    </section>
+
+    <section class="identify-card" id="identify-card" hidden>
+      <p>&#128075; Pick your name to track your own rank and see how close you are to the money.</p>
+      <button type="button" class="btn btn-primary" id="identify-btn">That&rsquo;s me &rarr;</button>
+    </section>
+
+    <!-- View + tabs -->
+    <section class="card controls-card">
+      <div class="control-row">
+        <label class="field control-week">
+          <span>View</span>
+          <select id="week-select">
+            <option value="live">Current (live)</option>
+          </select>
+        </label>
+        <div class="tab-strip" role="tablist" aria-label="Leaderboard">
+          <button class="tab-btn active" id="tab-fullTask" data-tab="fullTask" role="tab" aria-selected="true">Full Task</button>
+          <button class="tab-btn"        id="tab-rubric"   data-tab="rubric"   role="tab" aria-selected="false">Rubric-Only<span class="soon-dot" id="rubric-soon">soon</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Podium (Full Task only) -->
+    <section class="card podium-card" id="podium-card">
+      <h2 class="card-title">&#127942; The Money Podium &mdash; Top 3</h2>
+      <div class="podium" id="podium"></div>
+    </section>
+
+    <!-- Full leaderboard -->
+    <section class="card" id="board-card">
+      <h2 class="card-title" id="board-title">Full leaderboard &mdash; Full Task</h2>
+      <div class="table-wrap" id="board-table-wrap">
+        <table class="leaderboard-table" id="leaderboard-table">
+          <thead>
+            <tr>
+              <th class="col-rank">Rank</th>
+              <th class="col-name">Name</th>
+              <th class="col-trend">Trend</th>
+              <th class="col-count" id="th-score">Net score</th>
+              <th class="col-redo" id="th-redos">Redos</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-tbody">
+            <tr><td colspan="5" class="muted center">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted small overlay-legend" id="overlay-legend" hidden>
+        <span class="overlay-mark">&bull;</span> = admin overlay applied to this value.
+        &nbsp; Trend = movement since your last visit.
+      </p>
+      <!-- Coming-soon state for the rubric board -->
+      <div class="coming-soon" id="coming-soon" hidden>
+        <div class="cs-icon">&#128338;</div>
+        <h3>Rubric-Only board is on the way</h3>
+        <p>The rubric tab hasn&rsquo;t been added to this week&rsquo;s claim sheet yet. The moment it is, this board lights up automatically &mdash; no redeploy needed.</p>
+      </div>
+    </section>
+
+    <section class="card explainer">
+      <details>
+        <summary>How scoring works</summary>
+        <ul>
+          <li><strong>Net score</strong> = completed tasks &minus; outstanding redos (rows flagged <code>REDO</code> that haven&rsquo;t been redone yet). Never negative.</li>
+          <li><strong>Redos</strong> shows total redo cycles (each <code>REDO</code> flag = 1, plus an extra 1 for a second-redo on Full Task). Cumulative &mdash; never goes down.</li>
+          <li>The <strong>top 3</strong> on Full Task at lock-in split the bonus: <code>$500 / $300 / $150</code>.</li>
+          <li><strong>Trend</strong> arrows show how your rank moved since the last time you opened the board.</li>
+          <li>Click any name for the row-level breakdown. Use <strong>View</strong> to browse archived past weeks.</li>
+        </ul>
+      </details>
+    </section>
+
+    <footer class="site-footer">
+      <button class="link-btn" id="admin-link" type="button">Admin</button>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <!-- Name-picker modal ("You") -->
+  <div class="modal" id="picker-modal" hidden>
+    <div class="modal-backdrop" data-close="picker-modal"></div>
+    <div class="modal-card modal-card-narrow" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+      <header class="modal-head">
+        <h3 id="picker-title">Which one is you?</h3>
+        <button class="icon-btn" data-close="picker-modal" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <label class="field picker-search">
+          <input type="text" id="picker-search" placeholder="Search your name&hellip;" autocomplete="off" />
+        </label>
+        <div class="picker-list" id="picker-list"></div>
+        <p class="muted small" style="margin-top:10px">This is saved in your browser only &mdash; it just highlights your row. It doesn&rsquo;t change any scores.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- History modal -->
+  <div class="modal" id="history-modal" hidden>
+    <div class="modal-backdrop" data-close="history-modal"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="history-name">
+      <header class="modal-head">
+        <h3 id="history-name">Name</h3>
+        <button class="icon-btn" data-close="history-modal" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body" id="history-body"></div>
+    </div>
+  </div>
+
+  <!-- Password modal -->
+  <div class="modal" id="password-modal" hidden>
+    <div class="modal-backdrop" data-close="password-modal"></div>
+    <div class="modal-card modal-card-narrow" role="dialog" aria-modal="true" aria-labelledby="password-title">
+      <header class="modal-head">
+        <h3 id="password-title">Admin sign-in</h3>
+        <button class="icon-btn" data-close="password-modal" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <form id="password-form" class="form-stack">
+          <label class="field">
+            <span>Password</span>
+            <input type="password" id="password-input" autocomplete="current-password" required />
+          </label>
+          <p class="error" id="password-error" hidden>Incorrect password.</p>
+          <button type="submit" class="btn btn-primary">Unlock</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin overlay panel -->
+  <div class="modal admin-modal" id="admin-modal" hidden>
+    <div class="modal-backdrop" data-close="admin-modal"></div>
+    <div class="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="admin-title">
+      <header class="modal-head">
+        <div>
+          <h3 id="admin-title">Admin panel</h3>
+          <p class="admin-id muted small">
+            Logged in as <strong id="admin-name-display">&mdash;</strong>
+            &middot; <button type="button" class="link-btn" id="change-admin-name">change</button>
+            &middot; current sheet: <code id="current-sheet-id">&mdash;</code>
+          </p>
+        </div>
+        <button class="icon-btn" data-close="admin-modal" aria-label="Close">&times;</button>
+      </header>
+
+      <div class="modal-body admin-body">
+
+        <details class="admin-section" open>
+          <summary>How the admin panel works</summary>
+          <div class="admin-instructions">
+            <p><strong>The sheet is the source of truth.</strong> The live leaderboards read directly from the current claim sheet every time the page loads. Anything you do here is an <em>overlay</em> stored in Firestore and re-applied on top of the live numbers.</p>
+            <p><strong>Override a count.</strong> Use &ldquo;Overrides&rdquo; below to set a person&rsquo;s completed-task or redo-counter value for either board. The new value replaces the live one until you remove the overlay.</p>
+            <p><strong>Add a person not in the sheet.</strong> Use &ldquo;Add overlay-only person&rdquo;. They&rsquo;ll show up on the leaderboards with whatever counts you set.</p>
+            <p><strong>Aliases.</strong> If someone is typed two different ways in the sheet (e.g. <code>Antoniio V</code> vs. <code>Antonio V</code>), add an alias to merge them under one display name.</p>
+            <p><strong>Revert.</strong> Editing an overlaid field back to blank reverts that field to the live value.</p>
+            <p><strong>Start a new week.</strong> The &ldquo;Start new week / swap sheet&rdquo; button snapshots the current standings (with overlays applied) into the archive, then points the site at a new sheet URL and clears overlays so the new week starts fresh.</p>
+            <p><strong>Your name.</strong> Every adjustment is logged with the name you set above &mdash; double-check it before saving.</p>
+          </div>
+        </details>
+
+        <details class="admin-section" open>
+          <summary>Overrides &mdash; per person, per board</summary>
+          <div class="admin-block">
+            <p class="muted small">Click any row to edit its overlay values. Blank fields revert to the live computed value.</p>
+            <div class="table-wrap">
+              <table class="data-table" id="overrides-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Full Task net (live)</th>
+                    <th>Full Task redos (live)</th>
+                    <th>Rubric net (live)</th>
+                    <th>Rubric redos (live)</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="overrides-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+
+        <details class="admin-section">
+          <summary>Add overlay-only person</summary>
+          <form id="add-person-form" class="form-stack">
+            <label class="field">
+              <span>Display name</span>
+              <input type="text" id="add-person-name" required placeholder="e.g. Jordan K" />
+            </label>
+            <div class="row">
+              <label class="field">
+                <span>Full Task completed</span>
+                <input type="number" id="add-person-ft-completed" min="0" step="1" placeholder="0" />
+              </label>
+              <label class="field">
+                <span>Full Task redo counter</span>
+                <input type="number" id="add-person-ft-redo" min="0" step="1" placeholder="0" />
+              </label>
+            </div>
+            <div class="row">
+              <label class="field">
+                <span>Rubric completed</span>
+                <input type="number" id="add-person-rb-completed" min="0" step="1" placeholder="0" />
+              </label>
+              <label class="field">
+                <span>Rubric redo counter</span>
+                <input type="number" id="add-person-rb-redo" min="0" step="1" placeholder="0" />
+              </label>
+            </div>
+            <p class="error" id="add-person-error" hidden></p>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Add person</button>
+            </div>
+          </form>
+        </details>
+
+        <details class="admin-section">
+          <summary>Aliases / rename</summary>
+          <div class="admin-block">
+            <form id="alias-form" class="form-stack">
+              <div class="row">
+                <label class="field">
+                  <span>Sheet name (exact, case-insensitive)</span>
+                  <input type="text" id="alias-from" required placeholder="e.g. Antoniio V" />
+                </label>
+                <label class="field">
+                  <span>Display as</span>
+                  <input type="text" id="alias-to" required placeholder="e.g. Antonio V" />
+                </label>
+              </div>
+              <p class="error" id="alias-error" hidden></p>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Save alias</button>
+              </div>
+            </form>
+            <div class="table-wrap" style="margin-top:12px">
+              <table class="data-table" id="aliases-table">
+                <thead>
+                  <tr><th>Sheet name</th><th>Displays as</th><th></th></tr>
+                </thead>
+                <tbody id="aliases-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+
+        <details class="admin-section">
+          <summary>Start new week / swap sheet</summary>
+          <div class="admin-block">
+            <p class="muted small">Snapshots the current standings (with overlays applied) to the archive, points the site at the new sheet, and clears overlays.</p>
+            <button type="button" class="btn btn-primary" id="swap-week-btn">Start new week&hellip;</button>
+            <pre class="log" id="swap-log" hidden></pre>
+          </div>
+        </details>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay-edit modal -->
+  <div class="modal" id="overlay-edit-modal" hidden>
+    <div class="modal-backdrop" data-close="overlay-edit-modal"></div>
+    <div class="modal-card modal-card-narrow" role="dialog" aria-modal="true" aria-labelledby="overlay-edit-title">
+      <header class="modal-head">
+        <h3 id="overlay-edit-title">Edit overlay</h3>
+        <button class="icon-btn" data-close="overlay-edit-modal" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <form id="overlay-edit-form" class="form-stack">
+          <input type="hidden" id="overlay-edit-key" />
+          <p class="muted small">Blank = revert to live value (shown as placeholder).</p>
+          <div class="row">
+            <label class="field">
+              <span>Full Task completed</span>
+              <input type="number" id="ovl-ft-completed" min="0" step="1" />
+            </label>
+            <label class="field">
+              <span>Full Task redo counter</span>
+              <input type="number" id="ovl-ft-redo" min="0" step="1" />
+            </label>
+          </div>
+          <div class="row">
+            <label class="field">
+              <span>Rubric completed</span>
+              <input type="number" id="ovl-rb-completed" min="0" step="1" />
+            </label>
+            <label class="field">
+              <span>Rubric redo counter</span>
+              <input type="number" id="ovl-rb-redo" min="0" step="1" />
+            </label>
+          </div>
+          <p class="error" id="overlay-edit-error" hidden></p>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save overlay</button>
+            <button type="button" class="btn btn-danger" id="overlay-clear-all">Remove all overlays for this person</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Swap-week modal -->
+  <div class="modal" id="swap-modal" hidden>
+    <div class="modal-backdrop" data-close="swap-modal"></div>
+    <div class="modal-card modal-card-narrow" role="dialog" aria-modal="true" aria-labelledby="swap-title">
+      <header class="modal-head">
+        <h3 id="swap-title">Start new week / swap sheet</h3>
+        <button class="icon-btn" data-close="swap-modal" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <form id="swap-form" class="form-stack">
+          <label class="field">
+            <span>New claim-sheet URL</span>
+            <input type="text" id="swap-url" required placeholder="https://docs.google.com/spreadsheets/d/&hellip;" />
+          </label>
+          <label class="field">
+            <span>Label for the week being closed</span>
+            <input type="text" id="swap-label" required placeholder="e.g. 5/25 &ndash; 5/31" />
+          </label>
+          <p class="muted small">This snapshots the current boards (with overlays) under the label above, points the site at the new sheet, and wipes overlays. There&rsquo;s no undo &mdash; only manual edits afterward.</p>
+          <p class="error" id="swap-error" hidden></p>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="swap-confirm">Snapshot &amp; swap</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>
