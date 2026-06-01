@@ -95,7 +95,7 @@ body {
 
 /* Status pill */
 .status-pill {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: none; align-items: center; gap: 6px;
   padding: 4px 10px; border-radius: 999px;
   font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
   border: 1px solid transparent; cursor: help; user-select: none;
@@ -236,7 +236,7 @@ body {
     rgba(20, 22, 28, 0.92);
 }
 .podium {
-  display: grid; grid-template-columns: 1fr 1.18fr 1fr; gap: 14px; align-items: end;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; align-items: end;
 }
 .podium-slot {
   border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 14px 16px;
@@ -259,6 +259,15 @@ body {
 .podium-1 .podium-medal { font-size: 36px; }
 .podium-name { font-weight: 900; font-size: 17px; margin: 10px 0 3px; word-break: break-word; }
 .podium-1 .podium-name { font-size: 20px; }
+.podium-tie {
+  display: inline-block;
+  margin-bottom: 5px;
+  color: var(--gold-strong);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .podium-net { color: var(--muted); font-size: 13px; }
 .podium-net b { color: var(--text); font-variant-numeric: tabular-nums; }
 .podium-prize {

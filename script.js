@@ -55,9 +55,8 @@ const DROP_NAMES   = ["DO NOT CLAIM"];
 const NAME_ALIASES = {};  // built-in static aliases; runtime aliases come from Firestore
 const ASSUME_YEAR  = 2026;
 
-// Bonus structure — Full Task only. Top 3 at lock-in split this.
+// Bonus structure — Full Task only. Ties get the full prize for their rank.
 const PRIZES = { 1: 500, 2: 300, 3: 150 };
-const PRIZE_TOTAL = PRIZES[1] + PRIZES[2] + PRIZES[3];
 // Lock-in: Sunday June 7 2026, 12:00 PM Eastern (EDT = UTC-4).
 const BONUS_DEADLINE = new Date("2026-06-07T12:00:00-04:00");
 
@@ -504,6 +503,7 @@ function deriveFinalBoards() {
 
 function rowsForBoard(tab, boards) {
   let rows;
+  const scoreOf = (r) => tab === "combined" ? r.score : r.netScore;
   if (tab === "combined") {
     rows = [...boards.combined.values()];
     rows.sort((a, b) => (b.score - a.score) || a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }));
@@ -511,8 +511,24 @@ function rowsForBoard(tab, boards) {
     rows = [...boards[tab].values()];
     rows.sort((a, b) => (b.netScore - a.netScore) || a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }));
   }
-  rows.forEach((r, i) => { r.rank = i + 1; r.key = nameKey(r.displayName); });
+  let lastScore = null;
+  let lastRank = 0;
+  rows.forEach((r, i) => {
+    const score = scoreOf(r);
+    r.rank = score === lastScore ? lastRank : i + 1;
+    r.key = nameKey(r.displayName);
+    lastScore = score;
+    lastRank = r.rank;
+  });
+  for (const r of rows) {
+    r.tieSize = rows.filter((other) => other.rank === r.rank).length;
+    r.prizeAmount = tab === "fullTask" && r.netScore > 0 ? prizeForRankGroup(r.rank, r.tieSize) : 0;
+  }
   return rows;
+}
+
+function prizeForRankGroup(rank, tieSize) {
+  return PRIZES[rank] || 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -609,9 +625,9 @@ function renderTabHeaders() {
 // -----------------------------------------------------------------------------
 
 function renderHero() {
-  $("prize-total").textContent = money(PRIZE_TOTAL);
+  $("prize-total").textContent = `${money(PRIZES[1])} / ${money(PRIZES[2])} / ${money(PRIZES[3])}`;
   $("prize-breakdown").innerHTML =
-    `&#129351; 1st ${money(PRIZES[1])} &middot; &#129352; 2nd ${money(PRIZES[2])} &middot; &#129353; 3rd ${money(PRIZES[3])} &mdash; from Meridian`;
+    `&#129351; 1st ${money(PRIZES[1])} &middot; &#129352; 2nd ${money(PRIZES[2])} &middot; &#129353; 3rd ${money(PRIZES[3])} &middot; ties get the full prize for their rank`;
   // hide hero prize framing when browsing an archive
   $("hero").hidden = state.ui.view !== "live";
 }
@@ -685,11 +701,11 @@ function renderYou() {
   if (me.rank === 1) {
     const second = rows.find((r) => r.rank === 2);
     const lead = second ? me.netScore - second.netScore : me.netScore;
-    pressure = `<span class="money">${money(PRIZES[1])} &mdash; you're #1</span><br><span class="muted small">${lead > 0 ? lead + "-task lead" : "tied at the top — push"}</span>`;
-  } else if (me.rank <= 3) {
+    pressure = `<span class="money">${money(me.prizeAmount || PRIZES[1])} &mdash; ${me.tieSize > 1 ? "tied #1" : "you're #1"}</span><br><span class="muted small">${lead > 0 ? lead + "-task lead" : "tied at the top — push"}</span>`;
+  } else if (me.prizeAmount > 0) {
     const below = rows.find((r) => r.rank === me.rank + 1);
     const cushion = below ? me.netScore - below.netScore : me.netScore;
-    pressure = `<span class="money">In the money: ${money(PRIZES[me.rank])}</span><br><span class="muted small">${cushion > 0 ? cushion + "-task cushion" : "tied — hold your spot"}</span>`;
+    pressure = `<span class="money">In the money: ${money(me.prizeAmount)}</span><br><span class="muted small">${me.tieSize > 1 ? "tied at rank #" + me.rank : (cushion > 0 ? cushion + "-task cushion" : "tied — hold your spot")}</span>`;
   } else if (rank3) {
     const need = Math.max(1, rank3.netScore - me.netScore + 1);
     pressure = `<span class="gap">${need} ${need === 1 ? "task" : "tasks"} from the money</span><br><span class="muted small">3rd place pays ${money(PRIZES[3])}</span>`;
@@ -698,7 +714,7 @@ function renderYou() {
   }
   $("you-pressure").innerHTML = pressure;
 
-  if (me.rank <= 3) maybeConfetti();
+  if (me.prizeAmount > 0) maybeConfetti();
 }
 
 function openPicker() {
@@ -787,19 +803,21 @@ function renderBoard() {
 
 function renderPodium(rows) {
   const el = $("podium");
-  const top = rows.slice(0, 3);
-  if (!top.length) { el.innerHTML = `<p class="podium-empty">No contributors on the board yet — be the first to claim a task.</p>`; return; }
+  const prizeWinners = rows.filter((r) => r.prizeAmount > 0);
+  if (!prizeWinners.length) { el.innerHTML = `<p class="podium-empty">No contributors on the board yet — be the first to claim a task.</p>`; return; }
   const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
-  // Render order: 2nd, 1st, 3rd for a classic podium feel.
-  const order = [top[1], top[0], top[2]].filter(Boolean);
+  const classicPodium = prizeWinners.length === 3 && new Set(prizeWinners.map((r) => r.rank)).size === 3;
+  // Render order: 2nd, 1st, 3rd for a classic podium feel when there are no ties.
+  const order = classicPodium ? [prizeWinners[1], prizeWinners[0], prizeWinners[2]] : prizeWinners;
   el.innerHTML = order.map((r) => {
     const isYou = state.me && r.key === state.me;
     return `
       <div class="podium-slot podium-${r.rank}">
         <div class="podium-medal">${medals[r.rank] || ""}</div>
         <div class="podium-name">${escapeHtml(r.displayName)}</div>
+        ${r.tieSize > 1 ? `<div class="podium-tie">Tied #${r.rank}</div>` : ""}
         <div class="podium-net"><b>${r.netScore}</b> net · ${r.redoCounter} redos</div>
-        <div class="podium-prize">${money(PRIZES[r.rank])}</div>
+        <div class="podium-prize">${money(r.prizeAmount)}</div>
         ${isYou ? `<div class="podium-you-tag">You</div>` : ""}
       </div>
     `;
@@ -822,9 +840,9 @@ function renderLeaderboardRows(rows) {
     const ovScore = r.hasCompletedOverlay ? ' <span class="overlay-mark" title="Overlay applied">&bull;</span>' : "";
     const ovRedo  = r.hasRedoOverlay      ? ' <span class="overlay-mark" title="Overlay applied">&bull;</span>' : "";
     const isYou = state.me && r.key === state.me;
-    const inMoney = moneyBoard && r.rank <= 3;
-    const prizeTag = inMoney ? ` <span class="prize-tag">${money(PRIZES[r.rank])}</span>` : "";
-    const rankTag = moneyBoard && r.rank === 1 ? "Leader" : moneyBoard && r.rank <= 3 ? "In the money" : moneyBoard ? `${Math.max(0, r.rank - 3)} from podium` : "";
+    const inMoney = moneyBoard && r.prizeAmount > 0;
+    const prizeTag = inMoney ? ` <span class="prize-tag">${money(r.prizeAmount)}</span>` : "";
+    const rankTag = moneyBoard && r.tieSize > 1 && r.rank === 1 ? "Tied leader" : moneyBoard && r.tieSize > 1 && inMoney ? `Tied #${r.rank}` : moneyBoard && r.rank === 1 ? "Leader" : inMoney ? "In the money" : moneyBoard ? `${Math.max(1, r.rank - 3)} from podium` : "";
     const scorePct = Math.max(4, Math.round(((r.netScore || 0) / bestScore) * 100));
     const t = trendFor(state.ui.tab, r.key, r.rank);
     const cls = [`rank-${r.rank <= 3 ? r.rank : "n"}`, isYou ? "is-you" : "", inMoney ? "in-money" : ""].filter(Boolean).join(" ");
