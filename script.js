@@ -33,12 +33,22 @@ const FULL_TASK_GID = "0";
 // the board shows a "coming soon" state instead of erroring.
 const RUBRIC_TAB    = "[RTF] Rubric-Only";
 
-// Column indices. 0-indexed (so B=1, C=2, G=6, H=7, K=10, M=12, U=20, W=22).
+// Sheet columns. Prefer header names so the board survives inserted/reordered
+// columns; fall back to the current known positions if a CSV has no headers.
 const FULL = {
-  name: 1, redo: 2, done: 10, dateDone: 12, redoDone: 20, secondRedoDone: 22,
+  name: { headers: ["Claimed By"], fallback: 1 },
+  redo: { headers: ["DO NOT EDIT Needs Re-do", "Needs Re-do"], fallback: 3 },
+  done: { headers: ["Done"], fallback: 11 },
+  dateDone: { headers: ["Date Done"], fallback: 13 },
+  redoDone: { headers: ["REDO DONE", "Redo Done"], fallback: 21 },
+  secondRedoDone: { headers: ["SECOND REDO DONE", "Second Redo Done", "2ND REDO DONE", "2nd Redo Done"], fallback: null },
 };
 const RUBRIC = {
-  name: 1, redo: 2, done: 6,  dateDone: 7,  redoDone: 12,
+  name: { headers: ["Claimed By"], fallback: 1 },
+  redo: { headers: ["DO NOT EDIT Needs Re-do", "Needs Re-do"], fallback: 3 },
+  done: { headers: ["Done"], fallback: 6 },
+  dateDone: { headers: ["Date Done"], fallback: 7 },
+  redoDone: { headers: ["REDO DONE", "Redo Done"], fallback: 12 },
 };
 
 const DROP_NAMES   = ["DO NOT CLAIM"];
@@ -281,6 +291,13 @@ async function fetchCsv(url, what) {
   return text;
 }
 
+function looksLikeSameSheet(aHeaders, aRows, bHeaders, bRows) {
+  const sameHeaders = JSON.stringify(aHeaders || []) === JSON.stringify(bHeaders || []);
+  const sameFirstTask = (aRows?.[0]?.[0] || "") && (aRows?.[0]?.[0] || "") === (bRows?.[0]?.[0] || "");
+  const sameRowCount = (aRows || []).length === (bRows || []).length;
+  return sameHeaders && sameFirstTask && sameRowCount;
+}
+
 async function loadSheet(sheetId) {
   if (!sheetId) return;
   state.sheet.id = sheetId;
@@ -300,24 +317,35 @@ async function loadSheet(sheetId) {
     return;
   }
 
+  const fullParsed = parseCsv(fullCsv);
+  const fullHeaders = fullParsed[0] || [];
+  const fullRows = fullParsed.slice(1);
+
   // Rubric-Only is optional (fetched by name).
   let rubricRows = [];
+  let rubricHeaders = [];
   let rubricAvailable = false;
   try {
     const rubricCsv = await fetchCsv(csvUrlByName(sheetId, RUBRIC_TAB), "Rubric-Only tab");
-    rubricRows = parseCsv(rubricCsv).slice(1);
+    const rubricParsed = parseCsv(rubricCsv);
+    rubricHeaders = rubricParsed[0] || [];
+    rubricRows = rubricParsed.slice(1);
     rubricAvailable = true;
+    if (looksLikeSameSheet(fullHeaders, fullRows, rubricHeaders, rubricRows)) {
+      throw new Error("Rubric-Only tab appears to be missing; Google returned the Full Task tab instead.");
+    }
   } catch (err) {
     console.warn("[sheet] Rubric-Only tab not available yet — showing coming-soon. (", err.message, ")");
+    rubricHeaders = [];
+    rubricRows = [];
     rubricAvailable = false;
   }
 
-  const fullRows = parseCsv(fullCsv).slice(1);
-  state.sheet.raw = { fullRows, rubricRows };
+  state.sheet.raw = { fullRows, rubricRows, fullHeaders, rubricHeaders };
   state.sheet.rubricAvailable = rubricAvailable;
   state.sheet.base = {
-    fullTask: scoreRows(fullRows,   FULL,   "fullTask"),
-    rubric:   scoreRows(rubricRows, RUBRIC, "rubric"),
+    fullTask: scoreRows(fullRows,   FULL,   "fullTask", fullHeaders),
+    rubric:   scoreRows(rubricRows, RUBRIC, "rubric", rubricHeaders),
   };
   state.sheet.lastFetched = new Date();
   state.sheet.error = null;
@@ -330,11 +358,34 @@ async function loadSheet(sheetId) {
 // Scoring — one row = one task, per spec.
 // -----------------------------------------------------------------------------
 
-function scoreRows(rows, cfg, tabKey) {
+function normalizeHeaderName(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function resolveColumn(headers, spec) {
+  if (typeof spec === "number") return spec;
+  const normalized = (headers || []).map(normalizeHeaderName);
+  for (const header of spec.headers || []) {
+    const idx = normalized.indexOf(normalizeHeaderName(header));
+    if (idx !== -1) return idx;
+  }
+  return spec.fallback;
+}
+
+function resolveColumns(headers, cfg) {
+  return Object.fromEntries(Object.entries(cfg).map(([key, spec]) => [key, resolveColumn(headers, spec)]));
+}
+
+function cell(row, idx) {
+  return idx == null ? "" : (row[idx] || "");
+}
+
+function scoreRows(rows, cfg, tabKey, headers = []) {
+  const cols = resolveColumns(headers, cfg);
   const buckets = new Map();
   for (const row of rows) {
     if (!row || !row.length) continue;
-    const rawName = (row[cfg.name] || "").trim();
+    const rawName = cell(row, cols.name).trim();
     if (!rawName) continue;
     const aliased = applyAlias(normalizeNameRaw(rawName));
     if (!aliased) continue;
@@ -344,19 +395,20 @@ function scoreRows(rows, cfg, tabKey) {
     let b = buckets.get(k);
     if (!b) { b = { displayName: aliased, completed: 0, outstandingRedo: 0, redoCounter: 0, rows: [] }; buckets.set(k, b); }
 
-    const done       = truthyFlag(row[cfg.done]);
-    const isRedo     = (row[cfg.redo] || "").trim().toUpperCase() === "REDO";
-    const redoDone   = truthyFlag(row[cfg.redoDone]);
-    const secondDone = cfg.secondRedoDone !== undefined && truthyFlag(row[cfg.secondRedoDone]);
+    const done       = truthyFlag(cell(row, cols.done));
+    const isRedo     = cell(row, cols.redo).trim().toUpperCase() === "REDO";
+    const redoDone   = truthyFlag(cell(row, cols.redoDone));
+    const secondDone = cols.secondRedoDone != null && truthyFlag(cell(row, cols.secondRedoDone));
 
     if (done) b.completed++;
     if (isRedo && !redoDone) b.outstandingRedo++;
     if (isRedo) b.redoCounter++;
     if (secondDone) b.redoCounter++;
 
+    const rawDateDone = cell(row, cols.dateDone).trim();
     b.rows.push({
       taskId: (row[0] || "").trim().slice(0, 8),
-      date:   normalizeDate(row[cfg.dateDone]) || (row[cfg.dateDone] || "").trim() || null,
+      date:   normalizeDate(rawDateDone) || rawDateDone || null,
       done, isRedo, redoDone, secondRedoDone: secondDone,
     });
   }
@@ -379,8 +431,8 @@ function logScores(base, rubricAvailable) {
 function rescore() {
   if (!state.sheet.raw) return;
   state.sheet.base = {
-    fullTask: scoreRows(state.sheet.raw.fullRows,   FULL,   "fullTask"),
-    rubric:   scoreRows(state.sheet.raw.rubricRows, RUBRIC, "rubric"),
+    fullTask: scoreRows(state.sheet.raw.fullRows,   FULL,   "fullTask", state.sheet.raw.fullHeaders),
+    rubric:   scoreRows(state.sheet.raw.rubricRows, RUBRIC, "rubric", state.sheet.raw.rubricHeaders),
   };
 }
 
@@ -545,7 +597,9 @@ function renderTabHeaders() {
   }
   const soon = $("rubric-soon");
   if (soon) soon.hidden = state.sheet.rubricAvailable || state.ui.view !== "live";
-  const label = ({ fullTask: "Full Task", rubric: "Rubric-Only" })[state.ui.tab];
+  const label = state.ui.tab === "rubric" && state.ui.view === "live" && !state.sheet.rubricAvailable
+    ? "Rubrics coming soon"
+    : ({ fullTask: "Full Task", rubric: "Rubric-Only" })[state.ui.tab];
   const viewing = state.ui.view === "live" ? "" : " · archived";
   $("board-title").textContent = "Full leaderboard — " + label + viewing;
 }
@@ -762,6 +816,7 @@ function renderLeaderboardRows(rows) {
   }
   let anyOverlay = false;
   const moneyBoard = state.ui.tab === "fullTask";
+  const bestScore = Math.max(1, ...rows.map((r) => r.netScore || 0));
   tbody.innerHTML = rows.map((r) => {
     if (r.hasCompletedOverlay || r.hasRedoOverlay) anyOverlay = true;
     const ovScore = r.hasCompletedOverlay ? ' <span class="overlay-mark" title="Overlay applied">&bull;</span>' : "";
@@ -769,14 +824,19 @@ function renderLeaderboardRows(rows) {
     const isYou = state.me && r.key === state.me;
     const inMoney = moneyBoard && r.rank <= 3;
     const prizeTag = inMoney ? ` <span class="prize-tag">${money(PRIZES[r.rank])}</span>` : "";
+    const rankTag = moneyBoard && r.rank === 1 ? "Leader" : moneyBoard && r.rank <= 3 ? "In the money" : moneyBoard ? `${Math.max(0, r.rank - 3)} from podium` : "";
+    const scorePct = Math.max(4, Math.round(((r.netScore || 0) / bestScore) * 100));
     const t = trendFor(state.ui.tab, r.key, r.rank);
     const cls = [`rank-${r.rank <= 3 ? r.rank : "n"}`, isYou ? "is-you" : "", inMoney ? "in-money" : ""].filter(Boolean).join(" ");
     return `
-      <tr class="${cls}">
+      <tr class="${cls}" style="--score-pct:${scorePct}%">
         <td class="col-rank"><span class="rank-badge">${r.rank}</span></td>
-        <td class="col-name"><button class="name-link" data-history="${escapeAttr(r.displayName)}">${escapeHtml(r.displayName)}</button>${isYou ? '<span class="you-pill">You</span>' : ""}${prizeTag}</td>
+        <td class="col-name">
+          <button class="name-link" data-history="${escapeAttr(r.displayName)}">${escapeHtml(r.displayName)}</button>${isYou ? '<span class="you-pill">You</span>' : ""}${prizeTag}
+          ${rankTag ? `<div class="rank-flavor">${escapeHtml(rankTag)}</div>` : ""}
+        </td>
         <td class="col-trend">${trendHtml(t)}</td>
-        <td class="col-count">${r.netScore}${ovScore}</td>
+        <td class="col-count"><span class="score-num">${r.netScore}${ovScore}</span><span class="score-meter" aria-hidden="true"><span></span></span></td>
         <td class="col-redo">${r.redoCounter}${ovRedo}</td>
       </tr>
     `;
@@ -1255,9 +1315,15 @@ function extractSheetId(input) {
 function guessRangeLabel() {
   if (!state.sheet.raw) return "";
   const all = [];
-  const collect = (rows, cfg) => { for (const row of rows) { const d = normalizeDate(row[cfg.dateDone]); if (d) all.push(d); } };
-  collect(state.sheet.raw.fullRows, FULL);
-  collect(state.sheet.raw.rubricRows, RUBRIC);
+  const collect = (rows, cfg, headers) => {
+    const dateDone = resolveColumn(headers, cfg.dateDone);
+    for (const row of rows) {
+      const d = normalizeDate(cell(row, dateDone));
+      if (d) all.push(d);
+    }
+  };
+  collect(state.sheet.raw.fullRows, FULL, state.sheet.raw.fullHeaders);
+  collect(state.sheet.raw.rubricRows, RUBRIC, state.sheet.raw.rubricHeaders);
   if (!all.length) return "";
   all.sort();
   const fmt = (iso) => { const [, m, d] = iso.split("-").map(Number); return `${m}/${d}`; };
@@ -1267,8 +1333,10 @@ function guessRangeLabel() {
 function isoDateRangeForLabel() {
   if (!state.sheet.raw) return null;
   const all = [];
-  for (const row of state.sheet.raw.fullRows)   { const d = normalizeDate(row[FULL.dateDone]);   if (d) all.push(d); }
-  for (const row of state.sheet.raw.rubricRows) { const d = normalizeDate(row[RUBRIC.dateDone]); if (d) all.push(d); }
+  const fullDateDone = resolveColumn(state.sheet.raw.fullHeaders, FULL.dateDone);
+  const rubricDateDone = resolveColumn(state.sheet.raw.rubricHeaders, RUBRIC.dateDone);
+  for (const row of state.sheet.raw.fullRows)   { const d = normalizeDate(cell(row, fullDateDone));   if (d) all.push(d); }
+  for (const row of state.sheet.raw.rubricRows) { const d = normalizeDate(cell(row, rubricDateDone)); if (d) all.push(d); }
   if (!all.length) return null;
   all.sort();
   return { min: all[0], max: all[all.length - 1] };
