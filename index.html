@@ -23,24 +23,20 @@
 
     <div class="banner" id="loading-banner" hidden></div>
 
-    <!-- Prize + countdown hero -->
+    <!-- Performance hero -->
     <section class="hero" id="hero">
       <div class="hero-top">
-        <div class="prize-line">
+        <div class="performance-line">
           <div>
-            <span class="eyebrow">This week&rsquo;s bonus</span>
-            <p class="prize-headline">Full Task prize ladder: <span class="amt" id="prize-total">$500 / $300 / $150</span></p>
-            <p class="prize-sub" id="prize-breakdown">&#129351; 1st $500 &middot; &#129352; 2nd $300 &middot; &#129353; 3rd $150 &middot; ties get the full prize for their rank</p>
+            <span class="eyebrow">Live performance board</span>
+            <p class="performance-headline">Track the climb. Top score: <span class="amt" id="top-score">--</span></p>
+            <p class="performance-sub" id="performance-summary">Loading current standings&hellip;</p>
           </div>
         </div>
-        <div class="countdown" id="countdown">
-          <span class="cd-label">Bonus locks in</span>
-          <div class="cd-clock" id="cd-clock">
-            <div class="cd-unit"><div class="cd-num" id="cd-d">--</div><div class="cd-tag">days</div></div>
-            <div class="cd-unit"><div class="cd-num" id="cd-h">--</div><div class="cd-tag">hrs</div></div>
-            <div class="cd-unit"><div class="cd-num" id="cd-m">--</div><div class="cd-tag">min</div></div>
-            <div class="cd-unit"><div class="cd-num" id="cd-s">--</div><div class="cd-tag">sec</div></div>
-          </div>
+        <div class="performance-stats" id="performance-stats">
+          <div class="stat-unit"><div class="stat-num" id="stat-completed">--</div><div class="stat-tag">done</div></div>
+          <div class="stat-unit"><div class="stat-num" id="stat-active">--</div><div class="stat-tag">active</div></div>
+          <div class="stat-unit"><div class="stat-num" id="stat-leader">--</div><div class="stat-tag">leader</div></div>
         </div>
       </div>
     </section>
@@ -59,11 +55,11 @@
     </section>
 
     <section class="identify-card" id="identify-card" hidden>
-      <p>&#128075; Pick your name to track your own rank and see how close you are to the money.</p>
+      <p>&#128075; Pick your name to track your own rank and see how close you are to the top.</p>
       <button type="button" class="btn btn-primary" id="identify-btn">That&rsquo;s me &rarr;</button>
     </section>
 
-    <!-- View + tabs -->
+    <!-- View -->
     <section class="card controls-card">
       <div class="control-row">
         <label class="field control-week">
@@ -72,16 +68,12 @@
             <option value="live">Current (live)</option>
           </select>
         </label>
-        <div class="tab-strip" role="tablist" aria-label="Leaderboard">
-          <button class="tab-btn active" id="tab-fullTask" data-tab="fullTask" role="tab" aria-selected="true">Full Task</button>
-          <button class="tab-btn"        id="tab-rubric"   data-tab="rubric"   role="tab" aria-selected="false">Rubrics<span class="soon-dot" id="rubric-soon">soon</span></button>
-        </div>
       </div>
     </section>
 
     <!-- Podium (Full Task only) -->
     <section class="card podium-card" id="podium-card">
-      <h2 class="card-title">&#127942; The Money Podium &mdash; Top 3</h2>
+      <h2 class="card-title">&#127942; Top Performers</h2>
       <div class="podium" id="podium"></div>
     </section>
 
@@ -108,12 +100,6 @@
         <span class="overlay-mark">&bull;</span> = admin overlay applied to this value.
         &nbsp; Trend = movement since your last visit.
       </p>
-      <!-- Coming-soon state for the rubric board -->
-      <div class="coming-soon" id="coming-soon" hidden>
-        <div class="cs-icon">&#128338;</div>
-        <h3>Rubrics coming soon</h3>
-        <p>The Rubrics tab hasn&rsquo;t been added to this week&rsquo;s claim sheet yet. The moment it is, this board lights up automatically &mdash; no redeploy needed.</p>
-      </div>
     </section>
 
     <section class="card explainer">
@@ -122,7 +108,7 @@
         <ul>
           <li><strong>Net score</strong> = completed tasks &minus; outstanding redos (rows flagged <code>REDO</code> that haven&rsquo;t been redone yet). Never negative.</li>
           <li><strong>Redos</strong> shows total redo cycles (each <code>REDO</code> flag = 1, plus an extra 1 for a second-redo on Full Task). Cumulative &mdash; never goes down.</li>
-          <li>The <strong>Full Task prize ladder</strong> is <code>#1 $500 / #2 $300 / #3 $150</code>. Ties share the same rank and each tied person gets the full prize for that rank.</li>
+          <li><strong>Ranks</strong> use competition ranking, so tied scores share the same rank and the next rank skips ahead.</li>
           <li><strong>Trend</strong> arrows show how your rank moved since the last time you opened the board.</li>
           <li>Click any name for the row-level breakdown. Use <strong>View</strong> to browse archived past weeks.</li>
         </ul>
@@ -209,7 +195,7 @@
           <summary>How the admin panel works</summary>
           <div class="admin-instructions">
             <p><strong>The sheet is the source of truth.</strong> The live leaderboards read directly from the current claim sheet every time the page loads. Anything you do here is an <em>overlay</em> stored in Firestore and re-applied on top of the live numbers.</p>
-            <p><strong>Override a count.</strong> Use &ldquo;Overrides&rdquo; below to set a person&rsquo;s completed-task or redo-counter value for either board. The new value replaces the live one until you remove the overlay.</p>
+            <p><strong>Override a count.</strong> Use &ldquo;Overrides&rdquo; below to set a person&rsquo;s completed-task or redo-counter value. The new value replaces the live one until you remove the overlay.</p>
             <p><strong>Add a person not in the sheet.</strong> Use &ldquo;Add overlay-only person&rdquo;. They&rsquo;ll show up on the leaderboards with whatever counts you set.</p>
             <p><strong>Aliases.</strong> If someone is typed two different ways in the sheet (e.g. <code>Antoniio V</code> vs. <code>Antonio V</code>), add an alias to merge them under one display name.</p>
             <p><strong>Revert.</strong> Editing an overlaid field back to blank reverts that field to the live value.</p>
@@ -219,7 +205,7 @@
         </details>
 
         <details class="admin-section" open>
-          <summary>Overrides &mdash; per person, per board</summary>
+          <summary>Overrides &mdash; per person</summary>
           <div class="admin-block">
             <p class="muted small">Click any row to edit its overlay values. Blank fields revert to the live computed value.</p>
             <div class="table-wrap">
@@ -229,8 +215,6 @@
                     <th>Name</th>
                     <th>Full Task net (live)</th>
                     <th>Full Task redos (live)</th>
-                    <th>Rubric net (live)</th>
-                    <th>Rubric redos (live)</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -255,16 +239,6 @@
               <label class="field">
                 <span>Full Task redo counter</span>
                 <input type="number" id="add-person-ft-redo" min="0" step="1" placeholder="0" />
-              </label>
-            </div>
-            <div class="row">
-              <label class="field">
-                <span>Rubric completed</span>
-                <input type="number" id="add-person-rb-completed" min="0" step="1" placeholder="0" />
-              </label>
-              <label class="field">
-                <span>Rubric redo counter</span>
-                <input type="number" id="add-person-rb-redo" min="0" step="1" placeholder="0" />
               </label>
             </div>
             <p class="error" id="add-person-error" hidden></p>
@@ -337,16 +311,6 @@
             <label class="field">
               <span>Full Task redo counter</span>
               <input type="number" id="ovl-ft-redo" min="0" step="1" />
-            </label>
-          </div>
-          <div class="row">
-            <label class="field">
-              <span>Rubric completed</span>
-              <input type="number" id="ovl-rb-completed" min="0" step="1" />
-            </label>
-            <label class="field">
-              <span>Rubric redo counter</span>
-              <input type="number" id="ovl-rb-redo" min="0" step="1" />
             </label>
           </div>
           <p class="error" id="overlay-edit-error" hidden></p>

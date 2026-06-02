@@ -1,7 +1,7 @@
 /* =============================================================================
    TSIP Leaderboard — styles.css
-   Trading-terminal aesthetic: near-black surfaces, gold for #1 + prizes,
-   money-green for cash and upward movement, red for slipping.
+   Trading-terminal aesthetic: near-black surfaces, gold for #1,
+   performance-green for upward movement, red for slipping.
    ============================================================================= */
 
 :root {
@@ -113,7 +113,7 @@ body {
 .banner-info  { color: #9fc1ff; border-color: #2c3a5c; background: rgba(60,90,160,0.12); }
 .banner-error { color: var(--red); border-color: rgba(255,90,95,0.4); background: var(--red-soft); }
 
-/* ----------------------------------------------------------------- Hero / prize / countdown */
+/* ----------------------------------------------------------------- Hero / performance summary */
 .hero {
   position: relative;
   border: 1px solid var(--gold-border);
@@ -138,34 +138,26 @@ body {
   display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap;
   position: relative; z-index: 1;
 }
-.prize-line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.prize-line .eyebrow {
+.performance-line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.performance-line .eyebrow {
   font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
   color: var(--gold); display: block; margin-bottom: 4px;
 }
-.prize-headline { font-size: 28px; font-weight: 900; letter-spacing: 0.01em; margin: 0; }
-.prize-headline .amt {
+.performance-headline { font-size: 28px; font-weight: 900; letter-spacing: 0.01em; margin: 0; }
+.performance-headline .amt {
   color: var(--gold-strong);
   text-shadow: 0 0 24px rgba(245, 197, 66, 0.42);
 }
-.prize-sub { color: var(--muted); font-size: 14px; margin: 7px 0 0; }
+.performance-sub { color: var(--muted); font-size: 14px; margin: 7px 0 0; }
 
-/* Countdown */
-.countdown { text-align: right; }
-.countdown .cd-label {
-  font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--muted); display: block; margin-bottom: 6px;
-}
-.cd-clock { display: inline-flex; gap: 8px; }
-.cd-unit {
+.performance-stats { display: inline-flex; gap: 8px; text-align: right; }
+.stat-unit {
   background: rgba(10, 11, 14, 0.58); border: 1px solid rgba(245, 197, 66, 0.25);
-  border-radius: 10px; padding: 8px 10px; min-width: 56px; text-align: center;
+  border-radius: 10px; padding: 8px 12px; min-width: 74px; text-align: center;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
 }
-.cd-num { font-family: var(--mono); font-size: 25px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
-.cd-tag { font-size: 9px; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
-.cd-locked { color: var(--red); font-weight: 800; font-size: 16px; letter-spacing: 0.04em; }
-.cd-urgent .cd-num { color: var(--gold-strong); }
+.stat-num { font-family: var(--mono); font-size: 25px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.stat-tag { font-size: 9px; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
 
 /* ----------------------------------------------------------------- You card */
 .you-card {
@@ -185,7 +177,7 @@ body {
 .you-meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .you-meta strong { color: var(--text); }
 .you-pressure { font-weight: 700; font-size: 15px; text-align: right; }
-.you-pressure .money { color: var(--green-strong); }
+.you-pressure .highlight { color: var(--green-strong); }
 .you-pressure .gap { color: var(--gold-strong); }
 .you-change { background: none; border: 0; color: var(--muted); font-size: 12px; cursor: pointer; padding: 2px 0; text-decoration: underline; }
 .you-change:hover { color: var(--text); }
@@ -270,12 +262,12 @@ body {
 }
 .podium-net { color: var(--muted); font-size: 13px; }
 .podium-net b { color: var(--text); font-variant-numeric: tabular-nums; }
-.podium-prize {
+.podium-stat {
   margin-top: 12px; font-weight: 900; font-size: 21px; color: var(--green-strong);
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 20px rgba(37,208,125,0.24);
 }
-.podium-1 .podium-prize { font-size: 27px; }
+.podium-1 .podium-stat { font-size: 27px; }
 .podium-you-tag {
   display: inline-block; margin-top: 6px; font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
   text-transform: uppercase; color: #0a0b0e; background: var(--gold); padding: 2px 8px; border-radius: 999px;
@@ -306,17 +298,17 @@ table { width: 100%; border-collapse: collapse; }
   box-shadow: inset 3px 0 0 var(--gold);
 }
 .leaderboard-table tbody tr.is-you:hover { background: rgba(245,197,66,0.16); }
-.leaderboard-table tbody tr.in-money {
+.leaderboard-table tbody tr.top-rank {
   background:
     linear-gradient(90deg, rgba(37,208,125,0.085), transparent 42%),
     rgba(20,22,28,0.92);
 }
-.leaderboard-table tbody tr.in-money:hover {
+.leaderboard-table tbody tr.top-rank:hover {
   background:
     linear-gradient(90deg, rgba(37,208,125,0.14), transparent 46%),
     rgba(35,39,51,0.86);
 }
-.leaderboard-table tbody tr.in-money td.col-count { color: var(--green-strong); }
+.leaderboard-table tbody tr.top-rank td.col-count { color: var(--green-strong); }
 .col-rank { width: 74px; }
 .rank-badge {
   display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 32px;
@@ -358,11 +350,6 @@ table { width: 100%; border-collapse: collapse; }
   display: inline-block; margin-left: 8px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em;
   text-transform: uppercase; color: #0a0b0e; background: var(--gold); padding: 1px 7px; border-radius: 999px;
   vertical-align: middle;
-}
-.prize-tag {
-  display:inline-block; margin-left: 8px; font-size: 12px; font-weight: 900; color: #07100b;
-  background: var(--green-strong); padding: 2px 8px; border-radius: 999px;
-  box-shadow: 0 0 18px rgba(37,208,125,0.20);
 }
 .rank-flavor {
   color: var(--muted-2);
@@ -542,8 +529,8 @@ table { width: 100%; border-collapse: collapse; }
   .card { padding: 14px 14px; }
   .hero { padding: 16px 16px; }
   .hero-top { gap: 12px; }
-  .countdown { text-align: left; }
-  .prize-headline { font-size: 21px; }
+  .performance-stats { text-align: left; flex-wrap: wrap; }
+  .performance-headline { font-size: 21px; }
   .podium { grid-template-columns: 1fr; gap: 10px; align-items: stretch; }
   .podium-1 { order: -1; }
   .col-redo { display: none; }

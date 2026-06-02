@@ -1,8 +1,8 @@
 // =============================================================================
 // TSIP Leaderboard — script.js
 // =============================================================================
-// Reads task scores live from a Google Sheet, computes the Full Task and
-// Rubric-Only leaderboards, gamifies Full Task with a prize podium + countdown,
+// Reads task scores live from a Google Sheet, computes the Full Task
+// leaderboard, gamifies performance with a top-performers podium,
 // lets contributors flag "you" to track their own rank, and lets admins overlay
 // corrections and snapshot weekly archives via Firestore.
 
@@ -29,10 +29,6 @@ const DEFAULT_SHEET_ID = "1X1GLMnTU8mP90g1dydgy39YkL_nhcrqXkH9LhcjoDFE";
 // "gid=0" in the sheet URL) rather than by exact tab name. This makes us immune
 // to the tab being titled "Full Task" vs "Full Tasks" etc.
 const FULL_TASK_GID = "0";
-// Rubric-Only is fetched by name and is OPTIONAL — if the tab doesn't exist yet
-// the board shows a "coming soon" state instead of erroring.
-const RUBRIC_TAB    = "[RTF] Rubric-Only";
-
 // Sheet columns. Prefer header names so the board survives inserted/reordered
 // columns; fall back to the current known positions if a CSV has no headers.
 const FULL = {
@@ -54,11 +50,6 @@ const RUBRIC = {
 const DROP_NAMES   = ["DO NOT CLAIM"];
 const NAME_ALIASES = {};  // built-in static aliases; runtime aliases come from Firestore
 const ASSUME_YEAR  = 2026;
-
-// Bonus structure — Full Task only. Ties get the full prize for their rank.
-const PRIZES = { 1: 500, 2: 300, 3: 150 };
-// Lock-in: Sunday June 7 2026, 12:00 PM Eastern (EDT = UTC-4).
-const BONUS_DEADLINE = new Date("2026-06-07T12:00:00-04:00");
 
 // localStorage keys.
 const LS_ME    = "tsip_me_v1";       // nameKey of the viewer
@@ -84,7 +75,6 @@ const state = {
     id: null,
     raw: null,                 // { fullRows, rubricRows }
     base: null,                // { fullTask: Map, rubric: Map }
-    rubricAvailable: false,    // whether the rubric tab exists in the sheet
     fetching: false,
     error: null,
     lastFetched: null,
@@ -95,7 +85,7 @@ const state = {
   archives: [],
   archiveCache: {},
   ui: {
-    tab:  "fullTask",          // "fullTask" | "rubric"
+    tab:  "fullTask",
     view: "live",              // "live" | <archive doc id>
   },
   admin: { unlocked: false, name: sessionStorage.getItem("tsip_admin_name") || "" },
@@ -144,8 +134,6 @@ function initials(name) {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
-function money(n) { return "$" + Number(n || 0).toLocaleString(); }
-
 // -----------------------------------------------------------------------------
 // CSV parser (handles quoted fields, embedded newlines, escaped quotes).
 // -----------------------------------------------------------------------------
@@ -320,28 +308,10 @@ async function loadSheet(sheetId) {
   const fullHeaders = fullParsed[0] || [];
   const fullRows = fullParsed.slice(1);
 
-  // Rubric-Only is optional (fetched by name).
-  let rubricRows = [];
-  let rubricHeaders = [];
-  let rubricAvailable = false;
-  try {
-    const rubricCsv = await fetchCsv(csvUrlByName(sheetId, RUBRIC_TAB), "Rubric-Only tab");
-    const rubricParsed = parseCsv(rubricCsv);
-    rubricHeaders = rubricParsed[0] || [];
-    rubricRows = rubricParsed.slice(1);
-    rubricAvailable = true;
-    if (looksLikeSameSheet(fullHeaders, fullRows, rubricHeaders, rubricRows)) {
-      throw new Error("Rubric-Only tab appears to be missing; Google returned the Full Task tab instead.");
-    }
-  } catch (err) {
-    console.warn("[sheet] Rubric-Only tab not available yet — showing coming-soon. (", err.message, ")");
-    rubricHeaders = [];
-    rubricRows = [];
-    rubricAvailable = false;
-  }
+  const rubricRows = [];
+  const rubricHeaders = [];
 
   state.sheet.raw = { fullRows, rubricRows, fullHeaders, rubricHeaders };
-  state.sheet.rubricAvailable = rubricAvailable;
   state.sheet.base = {
     fullTask: scoreRows(fullRows,   FULL,   "fullTask", fullHeaders),
     rubric:   scoreRows(rubricRows, RUBRIC, "rubric", rubricHeaders),
@@ -349,7 +319,7 @@ async function loadSheet(sheetId) {
   state.sheet.lastFetched = new Date();
   state.sheet.error = null;
   state.sheet.fetching = false;
-  logScores(state.sheet.base, rubricAvailable);
+  logScores(state.sheet.base);
   renderAll();
 }
 
@@ -414,14 +384,9 @@ function scoreRows(rows, cfg, tabKey, headers = []) {
   return buckets;
 }
 
-function logScores(base, rubricAvailable) {
+function logScores(base) {
   console.groupCollapsed("[scoring] Full Task");
   for (const [, v] of base.fullTask) {
-    console.log(`  ${v.displayName}: completed=${v.completed}, outstanding=${v.outstandingRedo}, net=${Math.max(0, v.completed - v.outstandingRedo)}, redoCounter=${v.redoCounter}`);
-  }
-  console.groupEnd();
-  console.groupCollapsed("[scoring] Rubric-Only" + (rubricAvailable ? "" : " (tab not present)"));
-  for (const [, v] of base.rubric) {
     console.log(`  ${v.displayName}: completed=${v.completed}, outstanding=${v.outstandingRedo}, net=${Math.max(0, v.completed - v.outstandingRedo)}, redoCounter=${v.redoCounter}`);
   }
   console.groupEnd();
@@ -522,13 +487,8 @@ function rowsForBoard(tab, boards) {
   });
   for (const r of rows) {
     r.tieSize = rows.filter((other) => other.rank === r.rank).length;
-    r.prizeAmount = tab === "fullTask" && r.netScore > 0 ? prizeForRankGroup(r.rank, r.tieSize) : 0;
   }
   return rows;
-}
-
-function prizeForRankGroup(rank, tieSize) {
-  return PRIZES[rank] || 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -603,60 +563,37 @@ function renderWeekSelector() {
 }
 
 function renderTabHeaders() {
-  for (const t of ["fullTask", "rubric"]) {
-    const btn = $("tab-" + t);
-    if (btn) {
-      const active = state.ui.tab === t;
-      btn.classList.toggle("active", active);
-      btn.setAttribute("aria-selected", active ? "true" : "false");
-    }
-  }
-  const soon = $("rubric-soon");
-  if (soon) soon.hidden = state.sheet.rubricAvailable || state.ui.view !== "live";
-  const label = state.ui.tab === "rubric" && state.ui.view === "live" && !state.sheet.rubricAvailable
-    ? "Rubrics coming soon"
-    : ({ fullTask: "Full Task", rubric: "Rubric-Only" })[state.ui.tab];
   const viewing = state.ui.view === "live" ? "" : " · archived";
-  $("board-title").textContent = "Full leaderboard — " + label + viewing;
+  $("board-title").textContent = "Full leaderboard — Full Task" + viewing;
 }
 
 // -----------------------------------------------------------------------------
-// Hero: prize banner + live countdown.
+// Hero: live performance summary.
 // -----------------------------------------------------------------------------
 
 function renderHero() {
-  $("prize-total").textContent = `${money(PRIZES[1])} / ${money(PRIZES[2])} / ${money(PRIZES[3])}`;
-  $("prize-breakdown").innerHTML =
-    `&#129351; 1st ${money(PRIZES[1])} &middot; &#129352; 2nd ${money(PRIZES[2])} &middot; &#129353; 3rd ${money(PRIZES[3])} &middot; ties get the full prize for their rank`;
-  // hide hero prize framing when browsing an archive
   $("hero").hidden = state.ui.view !== "live";
-}
-
-function tickCountdown() {
-  const clock = $("cd-clock");
-  if (!clock) return;
-  const now = Date.now();
-  let diff = BONUS_DEADLINE.getTime() - now;
-  const cd = $("countdown");
-  if (diff <= 0) {
-    clock.innerHTML = `<span class="cd-locked">&#128274; Bonus locked</span>`;
+  if (state.ui.view !== "live") return;
+  if (!state.sheet.base) {
+    $("top-score").textContent = "--";
+    $("performance-summary").textContent = "Loading current standings...";
+    $("stat-completed").textContent = "--";
+    $("stat-active").textContent = "--";
+    $("stat-leader").textContent = "--";
     return;
   }
-  const d = Math.floor(diff / 86400000); diff -= d * 86400000;
-  const h = Math.floor(diff / 3600000);  diff -= h * 3600000;
-  const m = Math.floor(diff / 60000);    diff -= m * 60000;
-  const s = Math.floor(diff / 1000);
-  const set = (id, v) => { const el = $(id); if (el) el.textContent = String(v).padStart(2, "0"); };
-  // clock may have been replaced by the locked message after a swap back; rebuild if needed
-  if (!$("cd-d")) {
-    clock.innerHTML =
-      `<div class="cd-unit"><div class="cd-num" id="cd-d">--</div><div class="cd-tag">days</div></div>` +
-      `<div class="cd-unit"><div class="cd-num" id="cd-h">--</div><div class="cd-tag">hrs</div></div>` +
-      `<div class="cd-unit"><div class="cd-num" id="cd-m">--</div><div class="cd-tag">min</div></div>` +
-      `<div class="cd-unit"><div class="cd-num" id="cd-s">--</div><div class="cd-tag">sec</div></div>`;
-  }
-  set("cd-d", d); set("cd-h", h); set("cd-m", m); set("cd-s", s);
-  if (cd) cd.classList.toggle("cd-urgent", d === 0);
+  const rows = rowsForBoard("fullTask", deriveFinalBoards());
+  const leaderScore = rows[0]?.netScore || 0;
+  const leaders = rows.filter((r) => r.rank === 1 && leaderScore > 0).map((r) => r.displayName);
+  const totalCompleted = rows.reduce((sum, r) => sum + (r.completed || 0), 0);
+  const active = rows.filter((r) => (r.completed || 0) > 0).length;
+  $("top-score").textContent = leaderScore;
+  $("performance-summary").textContent = leaders.length
+    ? `${leaders.slice(0, 3).join(", ")} ${leaders.length > 3 ? "+" + (leaders.length - 3) + " more " : ""}${leaders.length === 1 ? "is" : "are"} setting the pace.`
+    : "No completed tasks yet. First one on the board sets the pace.";
+  $("stat-completed").textContent = totalCompleted;
+  $("stat-active").textContent = active;
+  $("stat-leader").textContent = leaderScore;
 }
 
 // -----------------------------------------------------------------------------
@@ -671,7 +608,7 @@ function currentFullRows() {
 function renderYou() {
   const youCard = $("you-card");
   const identify = $("identify-card");
-  // "You" mechanics are tied to the live Full Task money race.
+  // "You" mechanics are tied to the live Full Task race.
   const eligible = state.ui.view === "live" && state.ui.tab === "fullTask" && !!state.sheet.base;
   if (!eligible) { youCard.hidden = true; identify.hidden = true; return; }
 
@@ -701,20 +638,20 @@ function renderYou() {
   if (me.rank === 1) {
     const second = rows.find((r) => r.rank === 2);
     const lead = second ? me.netScore - second.netScore : me.netScore;
-    pressure = `<span class="money">${money(me.prizeAmount || PRIZES[1])} &mdash; ${me.tieSize > 1 ? "tied #1" : "you're #1"}</span><br><span class="muted small">${lead > 0 ? lead + "-task lead" : "tied at the top — push"}</span>`;
-  } else if (me.prizeAmount > 0) {
+    pressure = `<span class="highlight">${me.tieSize > 1 ? "Tied #1" : "You're #1"}</span><br><span class="muted small">${lead > 0 ? lead + "-task lead" : "tied at the top — push"}</span>`;
+  } else if (me.rank <= 3) {
     const below = rows.find((r) => r.rank === me.rank + 1);
     const cushion = below ? me.netScore - below.netScore : me.netScore;
-    pressure = `<span class="money">In the money: ${money(me.prizeAmount)}</span><br><span class="muted small">${me.tieSize > 1 ? "tied at rank #" + me.rank : (cushion > 0 ? cushion + "-task cushion" : "tied — hold your spot")}</span>`;
+    pressure = `<span class="highlight">Top 3 performer</span><br><span class="muted small">${me.tieSize > 1 ? "tied at rank #" + me.rank : (cushion > 0 ? cushion + "-task cushion" : "tied — keep pushing")}</span>`;
   } else if (rank3) {
     const need = Math.max(1, rank3.netScore - me.netScore + 1);
-    pressure = `<span class="gap">${need} ${need === 1 ? "task" : "tasks"} from the money</span><br><span class="muted small">3rd place pays ${money(PRIZES[3])}</span>`;
+    pressure = `<span class="gap">${need} ${need === 1 ? "task" : "tasks"} from top 3</span><br><span class="muted small">Keep climbing the board</span>`;
   } else {
     pressure = `<span class="gap">Claim tasks to climb</span>`;
   }
   $("you-pressure").innerHTML = pressure;
 
-  if (me.prizeAmount > 0) maybeConfetti();
+  if (me.rank <= 3) maybeConfetti();
 }
 
 function openPicker() {
@@ -764,19 +701,9 @@ function clearMe() {
 
 function renderBoard() {
   const podiumCard = $("podium-card");
-  const comingSoon = $("coming-soon");
   const tableWrap  = $("board-table-wrap");
   const overlayLegend = $("overlay-legend");
 
-  // Rubric coming-soon (live + rubric tab + tab not present in sheet).
-  if (state.ui.view === "live" && state.ui.tab === "rubric" && !state.sheet.rubricAvailable) {
-    podiumCard.hidden = true;
-    tableWrap.hidden = true;
-    overlayLegend.hidden = true;
-    comingSoon.hidden = false;
-    return;
-  }
-  comingSoon.hidden = true;
   tableWrap.hidden = false;
 
   // Podium only for live Full Task.
@@ -803,12 +730,12 @@ function renderBoard() {
 
 function renderPodium(rows) {
   const el = $("podium");
-  const prizeWinners = rows.filter((r) => r.prizeAmount > 0);
-  if (!prizeWinners.length) { el.innerHTML = `<p class="podium-empty">No contributors on the board yet — be the first to claim a task.</p>`; return; }
+  const topPerformers = rows.filter((r) => r.rank <= 3 && r.netScore > 0);
+  if (!topPerformers.length) { el.innerHTML = `<p class="podium-empty">No contributors on the board yet — be the first to claim a task.</p>`; return; }
   const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
-  const classicPodium = prizeWinners.length === 3 && new Set(prizeWinners.map((r) => r.rank)).size === 3;
+  const classicPodium = topPerformers.length === 3 && new Set(topPerformers.map((r) => r.rank)).size === 3;
   // Render order: 2nd, 1st, 3rd for a classic podium feel when there are no ties.
-  const order = classicPodium ? [prizeWinners[1], prizeWinners[0], prizeWinners[2]] : prizeWinners;
+  const order = classicPodium ? [topPerformers[1], topPerformers[0], topPerformers[2]] : topPerformers;
   el.innerHTML = order.map((r) => {
     const isYou = state.me && r.key === state.me;
     return `
@@ -817,7 +744,7 @@ function renderPodium(rows) {
         <div class="podium-name">${escapeHtml(r.displayName)}</div>
         ${r.tieSize > 1 ? `<div class="podium-tie">Tied #${r.rank}</div>` : ""}
         <div class="podium-net"><b>${r.netScore}</b> net · ${r.redoCounter} redos</div>
-        <div class="podium-prize">${money(r.prizeAmount)}</div>
+        <div class="podium-stat">${r.completed} completed</div>
         ${isYou ? `<div class="podium-you-tag">You</div>` : ""}
       </div>
     `;
@@ -833,24 +760,22 @@ function renderLeaderboardRows(rows) {
     return;
   }
   let anyOverlay = false;
-  const moneyBoard = state.ui.tab === "fullTask";
   const bestScore = Math.max(1, ...rows.map((r) => r.netScore || 0));
   tbody.innerHTML = rows.map((r) => {
     if (r.hasCompletedOverlay || r.hasRedoOverlay) anyOverlay = true;
     const ovScore = r.hasCompletedOverlay ? ' <span class="overlay-mark" title="Overlay applied">&bull;</span>' : "";
     const ovRedo  = r.hasRedoOverlay      ? ' <span class="overlay-mark" title="Overlay applied">&bull;</span>' : "";
     const isYou = state.me && r.key === state.me;
-    const inMoney = moneyBoard && r.prizeAmount > 0;
-    const prizeTag = inMoney ? ` <span class="prize-tag">${money(r.prizeAmount)}</span>` : "";
-    const rankTag = moneyBoard && r.tieSize > 1 && r.rank === 1 ? "Tied leader" : moneyBoard && r.tieSize > 1 && inMoney ? `Tied #${r.rank}` : moneyBoard && r.rank === 1 ? "Leader" : inMoney ? "In the money" : moneyBoard ? `${Math.max(1, r.rank - 3)} from podium` : "";
+    const topRank = r.rank <= 3 && r.netScore > 0;
+    const rankTag = r.tieSize > 1 && r.rank === 1 ? "Tied leader" : r.tieSize > 1 && topRank ? `Tied #${r.rank}` : r.rank === 1 && r.netScore > 0 ? "Leader" : topRank ? "Top performer" : `${Math.max(1, r.rank - 3)} from top 3`;
     const scorePct = Math.max(4, Math.round(((r.netScore || 0) / bestScore) * 100));
     const t = trendFor(state.ui.tab, r.key, r.rank);
-    const cls = [`rank-${r.rank <= 3 ? r.rank : "n"}`, isYou ? "is-you" : "", inMoney ? "in-money" : ""].filter(Boolean).join(" ");
+    const cls = [`rank-${r.rank <= 3 ? r.rank : "n"}`, isYou ? "is-you" : "", topRank ? "top-rank" : ""].filter(Boolean).join(" ");
     return `
       <tr class="${cls}" style="--score-pct:${scorePct}%">
         <td class="col-rank"><span class="rank-badge">${r.rank}</span></td>
         <td class="col-name">
-          <button class="name-link" data-history="${escapeAttr(r.displayName)}">${escapeHtml(r.displayName)}</button>${isYou ? '<span class="you-pill">You</span>' : ""}${prizeTag}
+          <button class="name-link" data-history="${escapeAttr(r.displayName)}">${escapeHtml(r.displayName)}</button>${isYou ? '<span class="you-pill">You</span>' : ""}
           ${rankTag ? `<div class="rank-flavor">${escapeHtml(rankTag)}</div>` : ""}
         </td>
         <td class="col-trend">${trendHtml(t)}</td>
@@ -914,8 +839,6 @@ function openHistory(displayName) {
   const k = nameKey(displayName);
   const boards = deriveFinalBoards();
   const f = boards.fullTask.get(k);
-  const r = boards.rubric.get(k);
-
   const ovInfo = state.overlays[k] || null;
   const adjustments = ovInfo?.adjustments || [];
 
@@ -974,7 +897,7 @@ function openHistory(displayName) {
     </div>
   ` : "";
 
-  const body = sectionFor("Full Task", f, true) + sectionFor("Rubric-Only", r, false) + adjHtml;
+  const body = sectionFor("Full Task", f, true) + adjHtml;
   $("history-name").textContent = displayName;
   $("history-body").innerHTML = body || `<p class="muted">No data for this person.</p>`;
   openModal("history-modal");
@@ -1045,12 +968,6 @@ async function loadArchive(weekLabel) {
 // -----------------------------------------------------------------------------
 
 function attachEvents() {
-  for (const t of ["fullTask", "rubric"]) {
-    $("tab-" + t).addEventListener("click", () => {
-      state.ui.tab = t;
-      renderTabHeaders(); renderYou(); renderBoard();
-    });
-  }
   $("week-select").addEventListener("change", (e) => {
     state.ui.view = e.target.value;
     renderTabHeaders(); renderHero(); renderYou(); renderBoard();
@@ -1141,7 +1058,6 @@ function renderOverridesTable() {
     return {
       key: k, displayName: f?.displayName || r?.displayName || k,
       ftNet: f?.netScore ?? 0, ftRedo: f?.redoCounter ?? 0,
-      rbNet: r?.netScore ?? 0, rbRedo: r?.redoCounter ?? 0,
       anyOverlay: !!state.overlays[k],
     };
   });
@@ -1149,10 +1065,10 @@ function renderOverridesTable() {
   tbody.innerHTML = rows.length ? rows.map((r) => `
     <tr>
       <td>${escapeHtml(r.displayName)}${r.anyOverlay ? ' <span class="overlay-mark">&bull;</span>' : ''}</td>
-      <td>${r.ftNet}</td><td>${r.ftRedo}</td><td>${r.rbNet}</td><td>${r.rbRedo}</td>
+      <td>${r.ftNet}</td><td>${r.ftRedo}</td>
       <td class="row-actions"><button class="btn btn-secondary" data-edit-overlay="${escapeAttr(r.key)}">Edit overlay</button></td>
     </tr>
-  `).join("") : `<tr><td colspan="6" class="muted center">No contributors yet — fetch the sheet first.</td></tr>`;
+  `).join("") : `<tr><td colspan="4" class="muted center">No contributors yet — fetch the sheet first.</td></tr>`;
   tbody.querySelectorAll("[data-edit-overlay]").forEach((btn) => btn.addEventListener("click", () => openOverlayEditor(btn.dataset.editOverlay)));
 }
 
@@ -1189,25 +1105,20 @@ async function onAddPersonSubmit(ev) {
     if (!name) throw new Error("Name is required.");
     const ftC = readNumOrNull("add-person-ft-completed");
     const ftR = readNumOrNull("add-person-ft-redo");
-    const rbC = readNumOrNull("add-person-rb-completed");
-    const rbR = readNumOrNull("add-person-rb-redo");
     const k = nameKey(name);
     const adjustments = [];
     const now = Date.now();
     const adj = (board, field, to) => adjustments.push({ board, field, from: null, to, by: state.admin.name || "Admin", at: { seconds: Math.floor(now/1000) } });
     if (ftC !== null) adj("fullTask", "completed", ftC);
     if (ftR !== null) adj("fullTask", "redoCounter", ftR);
-    if (rbC !== null) adj("rubric", "completed", rbC);
-    if (rbR !== null) adj("rubric", "redoCounter", rbR);
     const payload = {
       displayName: name, addedByOverlayOnly: true,
       fullTask: { ...(ftC !== null ? { completed: ftC } : {}), ...(ftR !== null ? { redoCounter: ftR } : {}) },
-      rubric:   { ...(rbC !== null ? { completed: rbC } : {}), ...(rbR !== null ? { redoCounter: rbR } : {}) },
       adjustments, updatedAt: serverTimestamp(),
     };
     await setDoc(doc(state.fb.db, "overlays", k), payload, { merge: true });
     showToast(`Added overlay-only person: ${name}`, "success");
-    ["add-person-name","add-person-ft-completed","add-person-ft-redo","add-person-rb-completed","add-person-rb-redo"].forEach((id) => $(id).value = "");
+    ["add-person-name","add-person-ft-completed","add-person-ft-redo"].forEach((id) => $(id).value = "");
   } catch (err) { console.error(err); errEl.textContent = err.message; errEl.hidden = false; }
 }
 
@@ -1243,8 +1154,8 @@ async function onAliasSubmit(ev) {
 
 function openOverlayEditor(personKey) {
   const boards = deriveFinalBoards();
-  const f = boards.fullTask.get(personKey), r = boards.rubric.get(personKey);
-  const displayName = state.overlays[personKey]?.displayName || f?.displayName || r?.displayName || personKey;
+  const f = boards.fullTask.get(personKey);
+  const displayName = state.overlays[personKey]?.displayName || f?.displayName || personKey;
   $("overlay-edit-title").textContent = "Edit overlay — " + displayName;
   $("overlay-edit-key").value = personKey;
   $("overlay-edit-error").hidden = true;
@@ -1252,8 +1163,6 @@ function openOverlayEditor(personKey) {
   const ov = state.overlays[personKey] || {};
   setField("ovl-ft-completed", ov.fullTask?.completed,   f?.baseCompleted   ?? 0);
   setField("ovl-ft-redo",      ov.fullTask?.redoCounter, f?.baseRedoCounter ?? 0);
-  setField("ovl-rb-completed", ov.rubric?.completed,     r?.baseCompleted   ?? 0);
-  setField("ovl-rb-redo",      ov.rubric?.redoCounter,   r?.baseRedoCounter ?? 0);
   openModal("overlay-edit-modal");
 }
 
@@ -1266,11 +1175,9 @@ async function onOverlayEditSubmit(ev) {
     if (!k) throw new Error("No person key.");
     const ftC = readBlankOrNum("ovl-ft-completed");
     const ftR = readBlankOrNum("ovl-ft-redo");
-    const rbC = readBlankOrNum("ovl-rb-completed");
-    const rbR = readBlankOrNum("ovl-rb-redo");
     const existing = state.overlays[k] || { adjustments: [] };
     const boards = deriveFinalBoards();
-    const f = boards.fullTask.get(k), r = boards.rubric.get(k);
+    const f = boards.fullTask.get(k);
     const adj = (existing.adjustments || []).slice();
     const now = { seconds: Math.floor(Date.now() / 1000) };
     const logChange = (board, field, fromLive, fromOverlay, to) => {
@@ -1280,16 +1187,13 @@ async function onOverlayEditSubmit(ev) {
     };
     logChange("fullTask", "completed",   f?.baseCompleted   ?? 0, existing.fullTask?.completed,   ftC);
     logChange("fullTask", "redoCounter", f?.baseRedoCounter ?? 0, existing.fullTask?.redoCounter, ftR);
-    logChange("rubric",   "completed",   r?.baseCompleted   ?? 0, existing.rubric?.completed,     rbC);
-    logChange("rubric",   "redoCounter", r?.baseRedoCounter ?? 0, existing.rubric?.redoCounter,   rbR);
-    const displayName = existing.displayName || f?.displayName || r?.displayName || k;
+    const displayName = existing.displayName || f?.displayName || k;
     const docPayload = {
       displayName, addedByOverlayOnly: !!existing.addedByOverlayOnly,
       fullTask: { ...(ftC !== null ? { completed: ftC } : {}), ...(ftR !== null ? { redoCounter: ftR } : {}) },
-      rubric:   { ...(rbC !== null ? { completed: rbC } : {}), ...(rbR !== null ? { redoCounter: rbR } : {}) },
       adjustments: adj, updatedAt: serverTimestamp(),
     };
-    const hasAny = ftC !== null || ftR !== null || rbC !== null || rbR !== null;
+    const hasAny = ftC !== null || ftR !== null;
     if (!hasAny && !existing.addedByOverlayOnly) {
       await deleteDoc(doc(state.fb.db, "overlays", k));
       showToast("Overlays cleared.", "success");
@@ -1437,8 +1341,6 @@ async function boot() {
   attachEvents();
   renderStatus();
   renderHero();
-  tickCountdown();
-  setInterval(tickCountdown, 1000);
   await probeFirebase();
   if (state.fb.status === "connected") startListeners();
   await loadSheet(state.meta?.currentSheetId || DEFAULT_SHEET_ID);
