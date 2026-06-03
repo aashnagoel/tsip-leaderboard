@@ -631,7 +631,7 @@ function renderYou() {
   }
 
   $("you-name").textContent = me.displayName;
-  $("you-meta").innerHTML = `Rank <strong>#${me.rank}</strong> &middot; <strong>${me.netScore}</strong> net &middot; ${me.redoCounter} redos`;
+  $("you-meta").innerHTML = `Rank <strong>#${me.rank}</strong> &middot; <strong>${me.netScore}</strong> net &middot; ${me.outstandingRedo} open redos`;
 
   const rank3 = rows.find((r) => r.rank === 3);
   let pressure = "";
@@ -730,21 +730,18 @@ function renderBoard() {
 
 function renderPodium(rows) {
   const el = $("podium");
-  const topPerformers = rows.filter((r) => r.rank <= 3 && r.netScore > 0);
+  const topPerformers = rows.filter((r) => r.netScore > 0).slice(0, 3);
   if (!topPerformers.length) { el.innerHTML = `<p class="podium-empty">No contributors on the board yet — be the first to claim a task.</p>`; return; }
   const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
-  const classicPodium = topPerformers.length === 3 && new Set(topPerformers.map((r) => r.rank)).size === 3;
-  // Render order: 2nd, 1st, 3rd for a classic podium feel when there are no ties.
-  const order = classicPodium ? [topPerformers[1], topPerformers[0], topPerformers[2]] : topPerformers;
+  const order = topPerformers.length === 3 ? [topPerformers[1], topPerformers[0], topPerformers[2]] : topPerformers;
   el.innerHTML = order.map((r) => {
     const isYou = state.me && r.key === state.me;
     return `
       <div class="podium-slot podium-${r.rank}">
         <div class="podium-medal">${medals[r.rank] || ""}</div>
         <div class="podium-name">${escapeHtml(r.displayName)}</div>
-        ${r.tieSize > 1 ? `<div class="podium-tie">Tied #${r.rank}</div>` : ""}
-        <div class="podium-net"><b>${r.netScore}</b> net · ${r.redoCounter} redos</div>
-        <div class="podium-stat">${r.completed} completed</div>
+        <div class="podium-stat">${r.netScore} net score</div>
+        <div class="podium-net">${r.completed} completed · ${r.outstandingRedo} open redos</div>
         ${isYou ? `<div class="podium-you-tag">You</div>` : ""}
       </div>
     `;
@@ -764,7 +761,6 @@ function renderLeaderboardRows(rows) {
   tbody.innerHTML = rows.map((r) => {
     if (r.hasCompletedOverlay || r.hasRedoOverlay) anyOverlay = true;
     const ovScore = r.hasCompletedOverlay ? ' <span class="overlay-mark" title="Overlay applied">&bull;</span>' : "";
-    const ovRedo  = r.hasRedoOverlay      ? ' <span class="overlay-mark" title="Overlay applied">&bull;</span>' : "";
     const isYou = state.me && r.key === state.me;
     const topRank = r.rank <= 3 && r.netScore > 0;
     const rankTag = r.tieSize > 1 && r.rank === 1 ? "Tied leader" : r.tieSize > 1 && topRank ? `Tied #${r.rank}` : r.rank === 1 && r.netScore > 0 ? "Leader" : topRank ? "Top performer" : `${Math.max(1, r.rank - 3)} from top 3`;
@@ -780,7 +776,7 @@ function renderLeaderboardRows(rows) {
         </td>
         <td class="col-trend">${trendHtml(t)}</td>
         <td class="col-count"><span class="score-num">${r.netScore}${ovScore}</span><span class="score-meter" aria-hidden="true"><span></span></span></td>
-        <td class="col-redo">${r.redoCounter}${ovRedo}</td>
+        <td class="col-redo">${r.outstandingRedo}</td>
       </tr>
     `;
   }).join("");
@@ -801,7 +797,7 @@ function renderArchiveRows(archivedRows) {
       <td class="col-name"><button class="name-link" data-archived-name="${escapeAttr(r.name)}">${escapeHtml(r.name)}</button></td>
       <td class="col-trend"><span class="trend trend-flat">—</span></td>
       <td class="col-count">${r.netScore ?? r.score ?? 0}</td>
-      <td class="col-redo">${r.redoCounter ?? r.totalRedos ?? 0}</td>
+      <td class="col-redo">${r.outstandingRedo ?? r.redoCounter ?? r.totalRedos ?? 0}</td>
     </tr>
   `).join("");
   tbody.querySelectorAll("[data-archived-name]").forEach((btn) => btn.addEventListener("click", () => openArchiveHistory(btn.dataset.archivedName)));
@@ -850,7 +846,7 @@ function openHistory(displayName) {
       <div class="history-section">
         <div class="history-section-head">
           <span>${escapeHtml(label)}</span>
-          <span class="total">Net ${stats.netScore} · Redos ${stats.redoCounter}</span>
+          <span class="total">Net ${stats.netScore} · Open redos ${stats.outstandingRedo}</span>
         </div>
         <table>
           <thead><tr><th>Field</th><th>Live</th><th>After overlay</th></tr></thead>
@@ -858,7 +854,7 @@ function openHistory(displayName) {
             <tr><td>Completed</td><td>${stats.baseCompleted}</td><td>${stats.completed}${ovStar(stats.hasCompletedOverlay)}</td></tr>
             <tr><td>Outstanding redos</td><td>${stats.outstandingRedo}</td><td>${stats.outstandingRedo}</td></tr>
             <tr><td>Net score</td><td>${Math.max(0, stats.baseCompleted - stats.outstandingRedo)}</td><td>${stats.netScore}</td></tr>
-            <tr><td>Redo counter</td><td>${stats.baseRedoCounter}</td><td>${stats.redoCounter}${ovStar(stats.hasRedoOverlay)}</td></tr>
+            <tr><td>Total redo flags</td><td>${stats.baseRedoCounter}</td><td>${stats.redoCounter}${ovStar(stats.hasRedoOverlay)}</td></tr>
           </tbody>
         </table>
         ${sampleRows.length ? `

@@ -73,7 +73,7 @@
 
     <!-- Podium (Full Task only) -->
     <section class="card podium-card" id="podium-card">
-      <h2 class="card-title">&#127942; Top Performers</h2>
+      <h2 class="card-title">&#127942; Top 3 By Net Score</h2>
       <div class="podium" id="podium"></div>
     </section>
 
@@ -88,7 +88,7 @@
               <th class="col-name">Name</th>
               <th class="col-trend">Trend</th>
               <th class="col-count" id="th-score">Net score</th>
-              <th class="col-redo" id="th-redos">Redos</th>
+              <th class="col-redo" id="th-redos">Open redos</th>
             </tr>
           </thead>
           <tbody id="leaderboard-tbody">
@@ -107,7 +107,7 @@
         <summary>How scoring works</summary>
         <ul>
           <li><strong>Net score</strong> = completed tasks &minus; outstanding redos (rows flagged <code>REDO</code> that haven&rsquo;t been redone yet). Never negative.</li>
-          <li><strong>Redos</strong> shows total redo cycles (each <code>REDO</code> flag = 1, plus an extra 1 for a second-redo on Full Task). Cumulative &mdash; never goes down.</li>
+          <li><strong>Open redos</strong> are redo rows that still need to be cleared. Net score is simply <code>completed - open redos</code>.</li>
           <li><strong>Ranks</strong> use competition ranking, so tied scores share the same rank and the next rank skips ahead.</li>
           <li><strong>Trend</strong> arrows show how your rank moved since the last time you opened the board.</li>
           <li>Click any name for the row-level breakdown. Use <strong>View</strong> to browse archived past weeks.</li>

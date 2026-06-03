@@ -251,15 +251,6 @@ body {
 .podium-1 .podium-medal { font-size: 36px; }
 .podium-name { font-weight: 900; font-size: 17px; margin: 10px 0 3px; word-break: break-word; }
 .podium-1 .podium-name { font-size: 20px; }
-.podium-tie {
-  display: inline-block;
-  margin-bottom: 5px;
-  color: var(--gold-strong);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 .podium-net { color: var(--muted); font-size: 13px; }
 .podium-net b { color: var(--text); font-variant-numeric: tabular-nums; }
 .podium-stat {
